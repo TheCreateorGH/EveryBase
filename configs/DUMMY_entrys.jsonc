@@ -1,10 +1,28 @@
 {
     "$schema": "./schema/entrys.json",
 
-    "field_id": {
-        "field_type": "field_id", // Type of the Field, from an Internal Type or Custom Type (e.g. "dcls")
+    "name": {
+        "field_type": "str_trimmed",
         "required": true, // Whether this field is required to fill
         "unique": true, // Whether the value of this field must be unique across all entries
-        "default": null // Default value for this field
+        "default": null
+    },
+    "email": {
+        "field_type": "email",
+        "required": true,
+        "unique": true,
+        "default": null
+    },
+    "age": {
+        "field_type": "uint8",
+        "required": true,
+        "unique": false,
+        "default": null
+    },
+    "active": {
+        "field_type": "bool",
+        "required": false,
+        "unique": false,
+        "default": true
     }
 }

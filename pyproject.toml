@@ -8,3 +8,6 @@ dependencies = [
     "customtkinter>=5.2.2",
     "rich>=15.0.0",
 ]
+
+[project.scripts]
+everybase = "everybase.tui:main"
