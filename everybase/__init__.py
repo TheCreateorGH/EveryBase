@@ -1,3 +1,5 @@
+"""Public Python API for schema-driven local storage."""
+
 from .core import (
     EntryNotFoundError,
     EveryBaseError,

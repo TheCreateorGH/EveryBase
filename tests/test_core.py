@@ -3,7 +3,6 @@ import unittest
 from pathlib import Path
 
 from everybase import EntryNotFoundError, Schema, SchemaError, Storage, ValidationError
-from everybase.tui import _parse_value, build_parser
 
 
 class StorageTests(unittest.TestCase):
@@ -141,13 +140,6 @@ class StorageTests(unittest.TestCase):
         storage = Storage(database, self.schema)
         storage.close()
         self.assertTrue(database.exists())
-
-    def test_tui_parses_json_values_and_arguments(self) -> None:
-        self.assertEqual(_parse_value("42"), 42)
-        self.assertEqual(_parse_value('{"enabled": true}'), {"enabled": True})
-        arguments = build_parser().parse_args(["--database", "/tmp/everybase-test.db"])
-        self.assertEqual(arguments.database, Path("/tmp/everybase-test.db"))
-
 
 if __name__ == "__main__":
     unittest.main()

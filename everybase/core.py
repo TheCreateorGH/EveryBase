@@ -1,3 +1,5 @@
+"""Schema validation, built-in types, and SQLite-backed record storage."""
+
 from __future__ import annotations
 
 import json
@@ -16,7 +18,7 @@ Validator = Callable[[Any], Any]
 
 
 def load_jsonc(path: str | Path) -> dict[str, Any]:
-    """Load a JSON or JSONC object while preserving comment-like text in strings."""
+    """Load a JSON/JSONC object without treating comment markers in strings as comments."""
     source = Path(path).read_text(encoding="utf-8")
     output: list[str] = []
     in_string = False
@@ -302,13 +304,14 @@ def _ensure_range(
 
 
 class TypeRegistry:
-    """Registry of field type validators."""
+    """Registry of built-in and application-defined field validators."""
 
     def __init__(self) -> None:
         self._validators: dict[str, Validator] = {}
         self._register_builtins()
 
     def register(self, name: str, validator: Validator) -> None:
+        """Register a validator under a new type name."""
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
             raise ValueError("type names must start with a letter and contain only letters, numbers, or _")
         if name in self._validators:
@@ -316,6 +319,7 @@ class TypeRegistry:
         self._validators[name] = validator
 
     def validate(self, type_name: str, value: Any) -> Any:
+        """Parse and validate a value using a registered type."""
         try:
             validator = self._validators[type_name]
         except KeyError as error:
@@ -326,6 +330,7 @@ class TypeRegistry:
             raise ValueError(f"{type_name}: {error}") from error
 
     def has(self, type_name: str) -> bool:
+        """Return whether a type name is registered."""
         return type_name in self._validators
 
     def _register_builtins(self) -> None:
@@ -402,6 +407,8 @@ class TypeRegistry:
 
 @dataclass(frozen=True)
 class FieldDefinition:
+    """Configuration for one schema field."""
+
     name: str
     field_type: str
     required: bool = False
@@ -410,6 +417,8 @@ class FieldDefinition:
 
 
 class Schema:
+    """Validate entries against ordered field definitions."""
+
     def __init__(self, fields: Iterable[FieldDefinition], registry: TypeRegistry | None = None) -> None:
         self.registry = registry or TypeRegistry()
         self.fields = tuple(fields)
@@ -431,6 +440,7 @@ class Schema:
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any], registry: TypeRegistry | None = None) -> Schema:
+        """Build a schema from the repository's field-definition mapping."""
         if not isinstance(mapping, Mapping) or not mapping:
             raise SchemaError("Schema must be a non-empty object.")
         fields = []
@@ -454,9 +464,11 @@ class Schema:
 
     @classmethod
     def from_file(cls, path: str | Path, registry: TypeRegistry | None = None) -> Schema:
+        """Load a schema from a JSON or JSONC file."""
         return cls.from_mapping(load_jsonc(path), registry)
 
     def validate_entry(self, entry: Mapping[str, Any], *, partial: bool = False) -> dict[str, Any]:
+        """Return a parsed entry or raise a validation error."""
         if not isinstance(entry, Mapping):
             raise ValidationError("Entry must be an object.")
         known = {field.name for field in self.fields}
@@ -488,6 +500,7 @@ class Schema:
         return result
 
     def field(self, name: str) -> FieldDefinition:
+        """Return a field definition by name."""
         for field in self.fields:
             if field.name == name:
                 return field
@@ -517,6 +530,7 @@ class Storage:
         self.connection.commit()
 
     def close(self) -> None:
+        """Close the SQLite connection."""
         self.connection.close()
 
     def __enter__(self) -> Storage:
@@ -526,6 +540,7 @@ class Storage:
         self.close()
 
     def create(self, entry: Mapping[str, Any], entry_id: str | None = None) -> dict[str, Any]:
+        """Validate and insert an entry."""
         validated = self.schema.validate_entry(entry)
         identifier = entry_id or str(uuid.uuid4())
         try:
@@ -549,16 +564,19 @@ class Storage:
         return {"id": identifier, **validated}
 
     def get(self, entry_id: str) -> dict[str, Any]:
+        """Return one entry by identifier."""
         row = self.connection.execute("SELECT id, data FROM entries WHERE id = ?", (entry_id,)).fetchone()
         if row is None:
             raise EntryNotFoundError(f"Entry '{entry_id}' was not found.")
         return {"id": row["id"], **json.loads(row["data"])}
 
     def list(self) -> list[dict[str, Any]]:
+        """Return all entries in creation order."""
         rows = self.connection.execute("SELECT id, data FROM entries ORDER BY created_at, id").fetchall()
         return [{"id": row["id"], **json.loads(row["data"])} for row in rows]
 
     def update(self, entry_id: str, changes: Mapping[str, Any]) -> dict[str, Any]:
+        """Validate and persist changes to an existing entry."""
         current = self.get(entry_id)
         current.pop("id")
         current.update(changes)
@@ -581,6 +599,7 @@ class Storage:
         return {"id": entry_id, **validated}
 
     def delete(self, entry_id: str) -> None:
+        """Delete an entry by identifier."""
         cursor = self.connection.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
         self.connection.commit()
         if cursor.rowcount == 0:

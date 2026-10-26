@@ -1,3 +1,5 @@
+"""Interactive terminal interface for the EveryBase package."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,6 +17,7 @@ DEFAULT_DATABASE = Path.home() / ".local" / "share" / "everybase" / "everybase.d
 
 
 def _parse_value(raw: str) -> Any:
+    """Parse JSON literals while leaving ordinary text unchanged."""
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -22,6 +25,7 @@ def _parse_value(raw: str) -> Any:
 
 
 class EveryBaseShell(cmd.Cmd):
+    """Command shell backed by one schema-aware storage instance."""
     intro = "EveryBase TUI. Type 'help' for commands."
     prompt = "everybase> "
 
@@ -78,6 +82,52 @@ class EveryBaseShell(cmd.Cmd):
             return
         print("Deleted.")
 
+    def do_edit(self, line: str) -> None:
+        """edit ID field=value [...]: Update fields on an entry."""
+        arguments = shlex.split(line)
+        if len(arguments) < 2:
+            print("Usage: edit ID field=value [...]")
+            return
+        entry_id, assignments = arguments[0], arguments[1:]
+        changes: dict[str, Any] = {}
+        for assignment in assignments:
+            if "=" not in assignment:
+                print(f"Invalid assignment: {assignment}")
+                return
+            field_name, raw_value = assignment.split("=", 1)
+            if not field_name:
+                print(f"Invalid assignment: {assignment}")
+                return
+            changes[field_name] = _parse_value(raw_value)
+        try:
+            entry = self.storage.update(entry_id, changes)
+        except EveryBaseError as error:
+            print(f"Error: {error}")
+            return
+        print(json.dumps(entry, ensure_ascii=False, sort_keys=True))
+
+    def do_find(self, line: str) -> None:
+        """find field=value: Show entries whose field equals the parsed value."""
+        arguments = shlex.split(line)
+        if len(arguments) != 1 or "=" not in arguments[0]:
+            print("Usage: find field=value")
+            return
+        field_name, raw_value = arguments[0].split("=", 1)
+        expected = _parse_value(raw_value)
+        try:
+            self.storage.schema.field(field_name)
+        except KeyError:
+            print(f"Error: unknown field '{field_name}'")
+            return
+        matches = [
+            entry for entry in self.storage.list()
+            if entry.get(field_name) == expected
+        ]
+        for entry in matches:
+            print(json.dumps(entry, ensure_ascii=False, sort_keys=True))
+        if not matches:
+            print("No matching entries.")
+
     def do_schema(self, _line: str) -> None:
         """schema: Show the active schema."""
         for field in self.storage.schema.fields:
@@ -96,6 +146,7 @@ class EveryBaseShell(cmd.Cmd):
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for the TUI."""
     parser = argparse.ArgumentParser(description="EveryBase schema-driven TUI")
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
     parser.add_argument("--database", type=Path, default=DEFAULT_DATABASE)
@@ -103,6 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Load the configured schema and run the interactive shell."""
     arguments = build_parser().parse_args(argv)
     schema = Schema.from_file(arguments.schema)
     with Storage(arguments.database, schema) as storage:
